@@ -7,12 +7,13 @@ import { Composer } from "./Composer";
 import { QueueStrip } from "./QueueStrip";
 import { PermissionCard, QuestionCard } from "./PromptCards";
 import { RunStatusBar } from "./RunStatusBar";
-import { useRunStream } from "../../api/useRunStream";
+import { partsOf, useRunStream } from "../../api/useRunStream";
 import {
   answerPermission,
   answerQuestion,
   enqueueMessage,
   fetchHistory,
+  interruptRun,
   skipQuestion,
   startRun,
   stopRun,
@@ -59,7 +60,7 @@ export function ChatScreen() {
     cwdRef.current = cwd;
     setParamsRef.current = setParams;
   });
-  const runs = useRuns(0);
+  const runs = useRuns(5000);
 
   const stream = useRunStream({
     onSessionId: (id) => {
@@ -75,6 +76,29 @@ export function ChatScreen() {
     onQueueStarted: (prompt: string) => {
       setMessages((current) => [...current, { role: "user", parts: [{ kind: "text", text: prompt }] }]);
     },
+    onSettled: (finished: boolean) => {
+      reloadRef.current(finished);
+    },
+  });
+
+  const reloadRef = useRef<(finished: boolean) => void>(() => undefined);
+  const reloadingRef = useRef(false);
+  useLayoutEffect(() => {
+    reloadRef.current = (finished: boolean) => {
+      const id = sessionIdRef.current;
+      if (!id || reloadingRef.current) return;
+      reloadingRef.current = true;
+      fetchHistory(cwdRef.current, id)
+        .then((history) => {
+          setMessages(finished ? history.messages : trimInFlight(history.messages));
+          setOffset(history.offset);
+          setTotal(history.total);
+        })
+        .catch(() => undefined)
+        .finally(() => {
+          reloadingRef.current = false;
+        });
+    };
   });
 
   const wantedKey = sessionParam ? `${cwd}\n${sessionParam}` : null;
@@ -125,7 +149,7 @@ export function ChatScreen() {
     const node = bodyRef.current;
     if (!node || !stickyRef.current) return;
     node.scrollTop = node.scrollHeight;
-  }, [messages, stream.live?.text, stream.live?.thinking, stream.live?.tools.length]);
+  }, [messages, stream.live?.parts.length, stream.live?.partial?.text]);
 
   const onScroll = useCallback(() => {
     const node = bodyRef.current;
@@ -193,16 +217,13 @@ export function ChatScreen() {
 
   const halt = async () => {
     if (!stream.runId) return;
-    await stopRun(stream.runId).catch(() => undefined);
+    const id = stream.runId;
+    const done = await interruptRun(id).then((result) => result.interrupted).catch(() => false);
+    if (!done) await stopRun(id).catch(() => undefined);
   };
 
   const live = stream.live;
-  const liveParts: MessagePart[] = [];
-  if (live?.thinking) liveParts.push({ kind: "thinking", text: live.thinking });
-  for (const tool of live?.tools ?? []) {
-    liveParts.push({ kind: "tool", id: tool.id, name: tool.name, input: tool.input, result: tool.result });
-  }
-  if (live?.text) liveParts.push({ kind: "text", text: live.text });
+  const liveParts: MessagePart[] = live ? partsOf(live) : [];
 
   const waiting = (live?.pending.length ?? 0) > 0;
 

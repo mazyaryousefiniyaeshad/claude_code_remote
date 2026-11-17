@@ -15,6 +15,7 @@ import {
   getRun,
   listRuns,
   stopRun,
+  interruptRun,
   subscribe,
   answerPermission,
   answerQuestion,
@@ -162,6 +163,10 @@ app.post("/api/run/:runId/unqueue", (req, res) => {
   ok(res, r);
 });
 
+app.post("/api/run/:runId/interrupt", async (req, res) => {
+  ok(res, { interrupted: await interruptRun(req.params.runId) });
+});
+
 app.post("/api/run/:runId/stop", (req, res) => {
   ok(res, { stopped: stopRun(req.params.runId) });
 });
@@ -179,17 +184,23 @@ app.get("/api/run/:runId/stream", (req, res) => {
   res.flushHeaders?.();
 
   const from = Number(req.query.from || 0);
-  const send = (ev) => res.write(`data: ${JSON.stringify(ev)}\n\n`);
+  const send = ({ seq, event }) => res.write(`id: ${seq}\ndata: ${JSON.stringify(event)}\n\n`);
 
-  for (const ev of run.events.slice(from)) send(ev);
+  const backlog = run.events.filter((entry) => entry.seq >= from);
+  if (from > 0 && run.events.length && run.events[0].seq > from) {
+    res.write(`data: ${JSON.stringify({ type: "gap" })}\n\n`);
+  }
+  for (const entry of backlog) send(entry);
   if (run.status !== "running") {
-    send({ type: "runner_done", status: run.status, sessionId: run.sessionId });
+    if (!backlog.some((entry) => entry.event.type === "runner_done")) {
+      res.write(`data: ${JSON.stringify({ type: "runner_done", status: run.status, sessionId: run.sessionId })}\n\n`);
+    }
     return res.end();
   }
 
-  const unsub = subscribe(run, (ev) => {
-    send(ev);
-    if (ev.type === "runner_done") { unsub(); res.end(); }
+  const unsub = subscribe(run, (entry) => {
+    send(entry);
+    if (entry.event.type === "runner_done") { unsub(); res.end(); }
   });
   const ping = setInterval(() => res.write(": ping\n\n"), 15000);
   req.on("close", () => { clearInterval(ping); unsub(); });

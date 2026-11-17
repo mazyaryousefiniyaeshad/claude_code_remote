@@ -33,6 +33,20 @@ export interface ToolResult {
   text: string;
 }
 
+export interface ToolStep {
+  id?: string;
+  name: string;
+  subject: string;
+  state: "working" | "done" | "failed";
+}
+
+export interface ToolActivity {
+  toolUses: number;
+  lastTool?: string;
+  summary?: string;
+  state: "working" | "done" | "failed";
+}
+
 export type MessagePart =
   | { kind: "text"; text: string }
   | { kind: "thinking"; text: string }
@@ -43,6 +57,8 @@ export type MessagePart =
       name: string;
       input: Record<string, unknown>;
       result?: ToolResult;
+      steps?: ToolStep[];
+      activity?: ToolActivity;
     };
 
 export interface Message {

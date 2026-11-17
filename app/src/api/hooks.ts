@@ -148,6 +148,9 @@ export function startRun(input: {
 
 export const stopRun = (runId: string) => api.post(`/run/${runId}/stop`);
 
+export const interruptRun = (runId: string) =>
+  api.post<{ interrupted: boolean }>(`/run/${runId}/interrupt`);
+
 export const enqueueMessage = (runId: string, prompt: string) =>
   api.post<{ id: string; position: number }>(`/run/${runId}/message`, { prompt });
 

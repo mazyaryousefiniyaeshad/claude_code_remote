@@ -9,6 +9,7 @@ interface Shape {
   subject: string;
   added?: number;
   removed?: number;
+  count?: number;
   rows: DiffRow[];
   wrap: boolean;
   output?: string;
@@ -64,12 +65,24 @@ function describe(part: ToolPart): Shape {
         wrap: false,
       };
     case "Task":
-    case "Agent":
+    case "Agent": {
+      const steps = part.steps ?? [];
+      const mark = { working: "[>]", done: "[x]", failed: "[!]" } as const;
+      const activity = part.activity;
+      const live = activity && !steps.length ? [activity.lastTool, activity.summary].filter(Boolean).join("  ") : "";
       return {
-        subject: text(input.description) || text(input.subagent_type),
-        rows: input.prompt ? [{ kind: "ctx", text: text(input.prompt).slice(0, 900) }] : [],
+        subject: [text(input.description) || text(input.subagent_type), live].filter(Boolean).join("  ·  "),
+        count: steps.length || activity?.toolUses || 0,
+        rows: [
+          ...steps.map((step) => ({
+            kind: step.state === "failed" ? ("del" as const) : ("ctx" as const),
+            text: `${mark[step.state]} ${step.name}  ${step.subject}`,
+          })),
+          ...(input.prompt && !steps.length ? [{ kind: "ctx" as const, text: text(input.prompt).slice(0, 900) }] : []),
+        ],
         wrap: true,
       };
+    }
     case "TodoWrite": {
       const todos = (input.todos as { content: string; status: string }[] | undefined) ?? [];
       const done = todos.filter((todo) => todo.status === "completed").length;
@@ -97,7 +110,14 @@ export function ToolCard({ part }: { part: ToolPart }) {
   const [open, setOpen] = useState(false);
   const shape = describe(part);
   const expandable = shape.rows.length > 0 || Boolean(shape.output);
-  const state = part.result ? (part.result.isError ? "failed" : "done") : "working";
+  const state =
+    part.activity && part.activity.state !== "done"
+      ? part.activity.state
+      : part.result
+        ? part.result.isError
+          ? "failed"
+          : "done"
+        : "working";
 
   return (
     <div className="tool">
@@ -109,6 +129,7 @@ export function ToolCard({ part }: { part: ToolPart }) {
       >
         <span className="tool-name">{part.name}</span>
         <span className="tool-subject">{shape.subject}</span>
+        {shape.count ? <span className="count num">{shape.count} steps</span> : null}
         {shape.added ? <span className="count count-add num">+{shape.added}</span> : null}
         {shape.removed ? <span className="count count-del num">−{shape.removed}</span> : null}
         <span className={`tool-state tool-state-${state}`} aria-hidden="true" />
@@ -119,13 +140,13 @@ export function ToolCard({ part }: { part: ToolPart }) {
         <div className="tool-body">
           {shape.rows.length ? (
             <div className={`code${shape.wrap ? " is-wrap" : ""}`}>
-              {shape.rows.slice(0, 60).map((row, index) => (
+              {(shape.count ? shape.rows.slice(-60) : shape.rows.slice(0, 60)).map((row, index) => (
                 <div key={index} className={`code-line code-${row.kind}`}>
                   {row.kind === "add" ? "+" : row.kind === "del" ? "−" : " "} {row.text}
                 </div>
               ))}
               {shape.rows.length > 60 ? (
-                <div className="code-line code-ctx">  … {shape.rows.length - 60} more lines</div>
+                <div className="code-line code-ctx">  … {shape.rows.length - 60} {shape.count ? "earlier steps" : "more lines"}</div>
               ) : null}
             </div>
           ) : null}
