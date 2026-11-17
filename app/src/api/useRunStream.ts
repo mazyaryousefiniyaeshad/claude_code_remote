@@ -9,6 +9,7 @@ export interface LiveState {
   error: string | null;
   pending: Pending[];
   queue: QueuedMessage[];
+  background: string[];
   lastEventAt: number;
 }
 
@@ -18,6 +19,7 @@ const emptyLive = (pending: Pending[] = [], queue: QueuedMessage[] = []): LiveSt
   error: null,
   pending,
   queue,
+  background: [],
   lastEventAt: Date.now(),
 });
 
@@ -208,6 +210,11 @@ export function useRunStream(handlers: StreamHandlers = {}) {
             break;
           }
           case "system": {
+            if (payload.subtype === "background_tasks_changed") {
+              const tasks = (payload.tasks as { description?: string; ambient?: boolean }[] | undefined) ?? [];
+              next.background = tasks.filter((task) => !task.ambient).map((task) => String(task.description ?? ""));
+              break;
+            }
             const toolId = typeof payload.tool_use_id === "string" ? payload.tool_use_id : null;
             if (!toolId) break;
             const usage = payload.usage as { tool_uses?: number } | undefined;

@@ -242,6 +242,7 @@ export function ChatScreen() {
               startedAt={stream.startedAt}
               lastEventAt={live?.lastEventAt ?? 0}
               waiting={waiting}
+              background={live?.background.length ?? 0}
               onStop={halt}
             />
           ) : null}

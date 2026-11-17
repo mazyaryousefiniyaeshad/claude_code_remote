@@ -6,10 +6,11 @@ interface Props {
   startedAt: number;
   lastEventAt: number;
   waiting: boolean;
+  background: number;
   onStop: () => void;
 }
 
-export function RunStatusBar({ startedAt, lastEventAt, waiting, onStop }: Props) {
+export function RunStatusBar({ startedAt, lastEventAt, waiting, background, onStop }: Props) {
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
@@ -23,7 +24,11 @@ export function RunStatusBar({ startedAt, lastEventAt, waiting, onStop }: Props)
     <div className={`run-bar${waiting ? " is-waiting" : ""}`} role="status">
       <StatusDot tone={waiting ? "waiting" : "working"} />
       <span className="run-bar-text">
-        {waiting ? "Claude is asking you something" : "Working"}
+        {waiting
+          ? "Claude is asking you something"
+          : background
+            ? `Working · ${background} in background`
+            : "Working"}
       </span>
       {!waiting ? (
         <span className="run-bar-clock num">
